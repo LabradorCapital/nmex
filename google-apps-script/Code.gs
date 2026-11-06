@@ -11,6 +11,10 @@
  *   4. Copy the Web app URL (it ends in /exec) and set FORM_ENDPOINT in
  *      assets/nmex.js on the website.
  *
+ * Changing this code later: save it, then Deploy > Manage deployments > edit (pencil)
+ * > Version: New version > Deploy. That keeps the same URL, so the website needs no change.
+ * Check: opening the URL in a browser should say "nmex.ltd form endpoint is running."
+ *
  * Each form writes to its own tab, created on the first submission:
  *   Newsletter - newsletter sign-ups and shareholder contact-detail updates (Contact page)
  *   Contact    - homepage "Contact Us" messages

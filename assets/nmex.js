@@ -3,14 +3,16 @@
  *
  * Entries are saved to the Google Sheet "NMEX Website Form Submissions" through a
  * Google Apps Script web app (code: google-apps-script/Code.gs in this repository).
- * Paste the web app URL (it ends in /exec) into FORM_ENDPOINT below.
- * Until it is set, forms open the visitor's email app with their details filled in.
+ * An entry only counts as saved when the web app answers {"ok": true}. If it does not
+ * (no endpoint set, deployment broken, network down), the form opens the visitor's
+ * email app with their details filled in, so nothing is lost.
  */
 (function () {
   'use strict';
 
-  var FORM_ENDPOINT = '';
+  var FORM_ENDPOINT = 'https://script.google.com/macros/s/AKfycbyK-ZUxrIAXfbawztASjXixbb3h1jSV8IKEXSFjyP-7xOVwA3w9n2abiyIoiGFYFn-O/exec';
   var CONTACT_EMAIL = 'cerronrs@msn.com';
+  var TIMEOUT_MS = 20000;
 
   function all(selector, root) {
     return Array.prototype.slice.call((root || document).querySelectorAll(selector));
@@ -32,7 +34,7 @@
     return data;
   }
 
-  function sendByEmail(form, data) {
+  function sendByEmail(form, data, intro) {
     var lines = [];
     data.forEach(function (value, key) {
       if (value && key !== 'form_name' && key !== 'website') lines.push(key + ': ' + value);
@@ -42,8 +44,23 @@
     window.location.href = 'mailto:' + CONTACT_EMAIL +
       '?subject=' + encodeURIComponent(subject) +
       '&body=' + encodeURIComponent(lines.join('\n'));
-    setStatus(form, 'Your email app should open with your details filled in. Press Send to finish. ' +
-      'If nothing opens, email ' + CONTACT_EMAIL + '.', 'ok');
+    setStatus(form, (intro || 'Your email app should open with your details filled in.') +
+      ' Press Send to finish. If nothing opens, email ' + CONTACT_EMAIL + '.', 'ok');
+  }
+
+  // Resolves only when the web app confirms the entry was saved.
+  function saveToSheet(data) {
+    var controller = window.AbortController ? new AbortController() : null;
+    var timer = controller ? setTimeout(function () { controller.abort(); }, TIMEOUT_MS) : null;
+    return fetch(FORM_ENDPOINT, { method: 'POST', body: data, signal: controller ? controller.signal : undefined })
+      .then(function (response) { return response.json(); })
+      .then(function (result) {
+        if (timer) clearTimeout(timer);
+        if (!result || result.ok !== true) throw new Error('not saved');
+      }, function (error) {
+        if (timer) clearTimeout(timer);
+        throw error;
+      });
   }
 
   all('form[data-nmex-form]').forEach(function (form) {
@@ -78,14 +95,15 @@
       if (button) button.disabled = true;
       setStatus(form, 'Sending…', '');
 
-      fetch(FORM_ENDPOINT, { method: 'POST', mode: 'no-cors', body: data })
+      saveToSheet(data)
         .then(function () {
           form.reset();
           if (choices.length) syncFields();
           setStatus(form, form.getAttribute('data-success') || 'Thank you, your details have been received.', 'ok');
         })
         .catch(function () {
-          setStatus(form, 'Sorry, that did not go through. Please try again, or email ' + CONTACT_EMAIL + '.', 'error');
+          // Not confirmed as saved: hand the entry to the visitor's email app instead of losing it.
+          sendByEmail(form, data, 'We could not save your details automatically, so your email app will open with them filled in.');
         })
         .then(function () {
           if (button) button.disabled = false;
